@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { T } from "./src/theme";
+import { CardIcon } from "./src/CardIcon";
 import { secureInt, rollReversed, drawWithoutReplacement } from "./src/engine/random";
 import { useEntropyPool, STIR_CAP } from "./src/engine/entropy";
 import { DECK, Card } from "./src/data/tarot";
@@ -107,22 +108,30 @@ export default function App() {
           </View>
         )}
 
-        <View
-          style={s.ring}
-          onStartShouldSetResponder={(e) => {
-            touchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-            return false;
-          }}
-          onMoveShouldSetResponder={(e) => {
-            if (!touchStart.current) return false;
-            const dx = e.nativeEvent.pageX - touchStart.current.x;
-            const dy = e.nativeEvent.pageY - touchStart.current.y;
-            return Math.hypot(dx, dy) > 8;
-          }}
-          onResponderMove={onStir}
-        >
-          <Text style={s.chargeTxt}>{charge}%</Text>
-          <Text style={s.hint}>stir to charge</Text>
+        <View style={s.ringWrap}>
+          {/* Stir capture: fills the ring area, never steals from the DRAW button */}
+          <View
+            style={[StyleSheet.absoluteFill, s.ringStir]}
+            onStartShouldSetResponder={(e) => {
+              touchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
+              return false;
+            }}
+            onMoveShouldSetResponder={(e) => {
+              if (!touchStart.current) return false;
+              const dx = e.nativeEvent.pageX - touchStart.current.x;
+              const dy = e.nativeEvent.pageY - touchStart.current.y;
+              return Math.hypot(dx, dy) > 8;
+            }}
+            onResponderMove={onStir}
+            onResponderRelease={() => { touchStart.current = null; }}
+            onResponderTerminate={() => { touchStart.current = null; }}
+          />
+          {/* Visual ring shell — no touch handling */}
+          <View style={s.ring} pointerEvents="none">
+            <Text style={s.chargeTxt}>{charge}%</Text>
+            <Text style={s.hint}>stir to charge</Text>
+          </View>
+          {/* DRAW button sits outside the stir responder so it always fires */}
           <Pressable style={s.draw} onPress={draw}>
             <Text style={s.drawTxt}>DRAW</Text>
           </Pressable>
@@ -138,6 +147,7 @@ export default function App() {
             {result.cards.map((c, i) => (
               <View key={i} style={[s.card, c.reversed && s.cardRev]}>
                 {c.position && <Text style={s.pos}>{c.position.toUpperCase()}</Text>}
+                <CardIcon name={c.art} size={36} color={T.yellow} strokeWidth={1.5} />
                 <View style={s.titleRow}>
                   <Text style={s.chip}>{c.chip}</Text>
                   <Text style={s.cardName}>{c.name}</Text>
@@ -196,9 +206,14 @@ const s = StyleSheet.create({
   tabOn: { borderColor: T.cyan },
   tabTxt: { color: T.dim, fontSize: 11, letterSpacing: 1.5 },
   tabTxtOn: { color: T.cyan },
+  ringWrap: {
+    width: 240, height: 240, marginTop: 8, alignItems: "center", justifyContent: "center",
+  },
+  ringStir: { borderRadius: 120 },
   ring: {
     width: 240, height: 240, borderRadius: 120, borderWidth: 1, borderColor: T.line,
-    backgroundColor: T.panel, alignItems: "center", justifyContent: "center", marginTop: 8,
+    backgroundColor: T.panel, alignItems: "center", justifyContent: "center",
+    position: "absolute",
   },
   chargeTxt: { color: T.cyan, fontSize: 12, position: "absolute", top: 28 },
   hint: { color: T.dim, fontSize: 9, letterSpacing: 2, position: "absolute", top: 46 },
