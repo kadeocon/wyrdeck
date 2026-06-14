@@ -28,7 +28,7 @@
  * is drawn at z-index 0 behind all cards. Consecutive coincident points
  * (cards 1 & 2 share a center) are deduplicated so no doubled-back segment.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View, Text, Pressable, StyleSheet, Modal,
   LayoutChangeEvent, useWindowDimensions,
@@ -197,43 +197,37 @@ export function SpreadMap({ cards, grid }: Props) {
     setContainerW(e.nativeEvent.layout.width);
   }, []);
 
-  // ── Geometry ──────────────────────────────────────────────────────────────
+  // ── Geometry (memoized — only recomputes when containerW, cards, or grid change) ──
 
-  const maxCol = Math.max(...grid.map(g => g.col));
-  const maxRow = Math.max(...grid.map(g => g.row));
-  const cardW  = deriveCardW(containerW, maxCol);
-  const cardH  = Math.round(cardW / ASPECT);
-  const totalH = maxRow * cardH + (maxRow - 1) * ROW_GAP;
+  const { cardW, cardH, totalH, placed, pointsStr, centerCard, crossCard, restCards } =
+    useMemo(() => {
+      const maxCol = grid.reduce((m, g) => Math.max(m, g.col), 0);
+      const maxRow = grid.reduce((m, g) => Math.max(m, g.row), 0);
+      const cardW  = deriveCardW(containerW, maxCol);
+      const cardH  = Math.round(cardW / ASPECT);
+      const totalH = maxRow * cardH + (maxRow - 1) * ROW_GAP;
 
-  const placed: Placed[] = cards
-    .filter((_, i) => grid[i] != null) // guard: skip cards with no grid slot
-    .map((card, i) => {
-      const cell = grid[i];
-      const left = colLeft(cell.col, cardW);
-      const top  = rowTop(cell.row, cardH);
+      const placed: Placed[] = cards
+        .filter((_, i) => grid[i] != null)
+        .map((card, i) => {
+          const cell = grid[i];
+          const left = colLeft(cell.col, cardW);
+          const top  = rowTop(cell.row, cardH);
+          return { ...card, n: i + 1, cell, left, top, cx: left + cardW / 2, cy: top + cardH / 2 };
+        });
+
+      const sorted     = [...placed].sort((a, b) => a.n - b.n);
+      const pts        = sorted.map(c => ({ x: c.cx, y: c.cy }));
+      const dedup      = pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i-1].x, p.y - pts[i-1].y) > 1);
+      const pointsStr  = dedup.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+
       return {
-        ...card,
-        n: i + 1,
-        cell,
-        left,
-        top,
-        cx: left + cardW / 2,
-        cy: top  + cardH / 2,
+        cardW, cardH, totalH, placed, pointsStr,
+        centerCard: placed.find(c => c.cell.center),
+        crossCard:  placed.find(c => c.cell.cross),
+        restCards:  placed.filter(c => !c.cell.center && !c.cell.cross),
       };
-    });
-
-  // ── Polyline: reading order, deduplicate coincident centers ───────────────
-  const sorted = [...placed].sort((a, b) => a.n - b.n);
-  const pts    = sorted.map(c => ({ x: c.cx, y: c.cy }));
-  const dedup  = pts.filter(
-    (p, i) => i === 0 || Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) > 1,
-  );
-  const pointsStr = dedup.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-
-  // ── Partition cards ───────────────────────────────────────────────────────
-  const centerCard = placed.find(c => c.cell.center);
-  const crossCard  = placed.find(c => c.cell.cross);
-  const restCards  = placed.filter(c => !c.cell.center && !c.cell.cross);
+    }, [containerW, cards, grid]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 

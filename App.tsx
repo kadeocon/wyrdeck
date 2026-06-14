@@ -135,7 +135,7 @@ export default function App() {
       const spread = currentSpread;
       const picks = drawWithoutReplacement(DECK.length, spread.positions.length, entropy);
       const cards = picks.map((i, k): DrawnCard => ({
-        ...DECK[i], reversed: rollReversed(entropy), position: spread.positions[k],
+        ...DECK[i], reversed: rollReversed(entropy ^ (k + 1)), position: spread.positions[k],
       }));
       setResult({ kind: "cards", cards, spreadName: spread.name });
       addLog("Spread", `${spread.name}: ${cards.map((c) => c.name).join(" · ")}`);
@@ -645,7 +645,6 @@ const s = StyleSheet.create({
     padding: 9, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 7,
     width: "47%",
   },
-  entryOn: { borderColor: T.cyan },
   entryOpen: { width: "100%", padding: 0, borderColor: T.yellow, flexDirection: "column" },
   entryChip: {
     color: T.cyan, borderWidth: 1, borderColor: T.cyan, borderRadius: 999,
