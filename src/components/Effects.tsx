@@ -3,7 +3,8 @@
  * IMPORTANT: all three are STATIC, exactly like the original. No animation, no flicker.
  * Requires: npx expo install react-native-svg
  */
-import { View, Text, StyleSheet, TextStyle, StyleProp, useWindowDimensions } from "react-native";
+import { useEffect, useState } from "react";
+import { View, Text, StyleSheet, TextStyle, StyleProp, useWindowDimensions, AccessibilityInfo } from "react-native";
 import Svg, { Defs, Pattern, Path, Rect, G } from "react-native-svg";
 import { T } from "../theme";
 
@@ -15,8 +16,19 @@ const CRACKLE_PATH =
 
 const TILE = 160;
 
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduced);
+    return () => sub.remove();
+  }, []);
+  return reduced;
+}
+
 /** Seamless Voronoi crackle, tiled. Static, opacity 0.09 like the original. */
 export function CrackleOverlay() {
+  if (useReducedMotion()) return null;
   const { width, height } = useWindowDimensions();
   const cols = Math.ceil(width / TILE) + 1;
   const rows = Math.ceil(height / TILE) + 1;
@@ -41,6 +53,7 @@ export function CrackleOverlay() {
 
 /** CRT scanlines: 1px dark line every 3px. Static, opacity 0.35 like the original. */
 export function Scanlines() {
+  if (useReducedMotion()) return null;
   const { width, height } = useWindowDimensions();
   return (
     <View style={[st.fill, { opacity: 0.35 }]} pointerEvents="none">
@@ -68,8 +81,16 @@ export function ChromaText({
   style?: StyleProp<TextStyle>;
   tone?: "bone" | "yes" | "no";
 }) {
+  const reduced = useReducedMotion();
   const glow = tone === "no" ? T.red : T.cyan;
   const top = tone === "yes" ? T.cyan : tone === "no" ? T.red : T.bone;
+  if (reduced) {
+    return (
+      <Text style={[style, { color: top, textShadowColor: glow, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 8 }]}>
+        {children}
+      </Text>
+    );
+  }
   return (
     <View>
       <Text style={[style, st.ghost, { color: T.red, left: 2 }]}>{children}</Text>
