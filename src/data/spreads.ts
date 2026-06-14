@@ -20,6 +20,8 @@ export interface Spread {
   positions: string[];
   /** When present, renders a SpreadMap instead of a stacked column. */
   grid?: GridCell[];
+  /** Short reading guide shown in the SpreadMap info popout. */
+  info?: string;
 }
 
 export const SPREADS: Spread[] = [
@@ -45,6 +47,7 @@ export const SPREADS: Spread[] = [
       { col: 5, row: 2              }, // 9  Hopes & Fears
       { col: 5, row: 1              }, // 10 Outcome
     ],
+    info: "The cross (1–6) maps the situation; the staff (7–10) maps where it's heading.\n\nCard 2 lies across card 1 — the heart of the matter and what crosses it.\n\nFollow the red line in number order. Tap any card for its full meaning.",
   },
   // ── Extensibility smoke-test: Horseshoe (7 cards, arc layout) ──────────────
   // Demonstrates that adding a new grid spread requires only data — zero
@@ -64,6 +67,7 @@ export const SPREADS: Spread[] = [
       { col: 3, row: 2 }, // 6  Advice
       { col: 3, row: 3 }, // 7  Outcome
     ],
+    info: "The horseshoe reads in a U-shaped arc from left to right.\n\nLeft column (1–3): where you've come from and what's hidden. Top row (4–5): the obstacle and outside forces at play. Right column (6–7): guidance and likely outcome.\n\nFollow the red line in number order. Tap any card for its full meaning.",
   },
 ];
 

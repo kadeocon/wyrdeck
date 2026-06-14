@@ -355,6 +355,7 @@ export default function App() {
                 <SpreadMap
                   cards={result.cards as MapCard[]}
                   grid={currentSpread.grid}
+                  hint={currentSpread.info}
                 />
               ) : (
                 <View style={s.cards}>

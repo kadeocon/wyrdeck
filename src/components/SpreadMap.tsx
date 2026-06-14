@@ -64,6 +64,7 @@ interface Placed extends MapCard {
 interface Props {
   cards: MapCard[];
   grid: GridCell[];
+  hint?: string;
 }
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
@@ -88,12 +89,17 @@ function rowTop(row: number, cardH: number): number {
  * column index used by this spread's grid.
  */
 function deriveCardW(containerW: number, maxCol: number): number {
-  // Count "real" (non-spacer) columns
   const nCols  = maxCol >= 5 ? 4 : maxCol;
-  const nGaps  = nCols - 1 + (maxCol >= 5 ? 1 : 0); // +1 for the spacer slot
+  const nGaps  = nCols - 1 + (maxCol >= 5 ? 1 : 0);
   const spacer = maxCol >= 5 ? SPACER_W : 0;
   const raw    = (containerW - spacer - nGaps * COL_GAP) / nCols;
   return Math.min(76, Math.max(52, Math.floor(raw)));
+}
+
+/** Pixel width of the grid's bounding box, derived from colLeft of the rightmost column. */
+function gridTotalW(maxCol: number, cardW: number): number {
+  if (maxCol >= 5) return 4 * cardW + 3 * COL_GAP + SPACER_W;
+  return maxCol * cardW + (maxCol - 1) * COL_GAP;
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -186,20 +192,20 @@ function ExpandSheet({ card, onClose }: { card: Placed; onClose: () => void }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function SpreadMap({ cards, grid }: Props) {
+export function SpreadMap({ cards, grid, hint }: Props) {
   const { width: screenW } = useWindowDimensions();
-  // Seed with a reasonable estimate; onLayout corrects immediately.
   const [containerW, setContainerW] = useState(screenW - 40);
   const [open,       setOpen]       = useState<Placed | null>(null);
   const [infoOpen,   setInfoOpen]   = useState(false);
 
+  // Measure the root container (full available width), not the map itself.
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     setContainerW(e.nativeEvent.layout.width);
   }, []);
 
   // ── Geometry (memoized — only recomputes when containerW, cards, or grid change) ──
 
-  const { cardW, cardH, totalH, placed, pointsStr, centerCard, crossCard, restCards } =
+  const { cardW, cardH, totalH, totalW, placed, pointsStr, centerCard, crossCard, restCards } =
     useMemo(() => {
       const maxCol = grid.reduce((m, g) => Math.max(m, g.col), 0);
       const maxRow = grid.reduce((m, g) => Math.max(m, g.row), 0);
@@ -221,8 +227,11 @@ export function SpreadMap({ cards, grid }: Props) {
       const dedup      = pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i-1].x, p.y - pts[i-1].y) > 1);
       const pointsStr  = dedup.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
+      const maxCol2 = grid.reduce((m, g) => Math.max(m, g.col), 0);
+      const totalW  = gridTotalW(maxCol2, cardW);
+
       return {
-        cardW, cardH, totalH, placed, pointsStr,
+        cardW, cardH, totalH, totalW, placed, pointsStr,
         centerCard: placed.find(c => c.cell.center),
         crossCard:  placed.find(c => c.cell.cross),
         restCards:  placed.filter(c => !c.cell.center && !c.cell.cross),
@@ -234,7 +243,7 @@ export function SpreadMap({ cards, grid }: Props) {
   const thumbBase = [sm.thumb, { width: cardW, height: cardH }] as const;
 
   return (
-    <View style={sm.root}>
+    <View style={sm.root} onLayout={onLayout}>
 
       {/* ── Header + info toggle ── */}
       <View style={sm.headerRow}>
@@ -249,30 +258,30 @@ export function SpreadMap({ cards, grid }: Props) {
       </View>
 
       {/* ── Info pop-out ── */}
-      {infoOpen && (
+      {infoOpen && hint && (
         <InfoCard title="READING THE SPREAD">
-          <Text style={ip.body}>
-            The <Text style={ip.bold}>cross</Text> (1–6) maps the situation;
-            the <Text style={ip.bold}>staff</Text> (7–10) maps where it's heading.
-            {"\n\n"}
-            Card 2 lies across card 1 — the heart of the matter and what crosses it.
-            {"\n\n"}
-            Follow the <Text style={ip.red}>red line</Text> in number order.
-            Tap any card for its full meaning.
-          </Text>
+          {hint.split("\n\n").map((para, i) => {
+            const parts = para.split("red line");
+            return (
+              <Text key={i} style={ip.body}>
+                {parts.length > 1
+                  ? <>{parts[0]}<Text style={ip.red}>red line</Text>{parts[1]}</>
+                  : para}
+              </Text>
+            );
+          })}
         </InfoCard>
       )}
 
-      {/* ── Map ── */}
+      {/* ── Map — sized to exact grid width and centered ── */}
       <View
-        style={[sm.map, { height: totalH }]}
-        onLayout={onLayout}
+        style={[sm.map, { width: totalW, height: totalH, alignSelf: "center" }]}
         accessibilityRole="none"
         accessibilityLabel={`${cards.length}-card spread layout`}
       >
         {/* Red connector — behind all cards (z-index 0 via render order) */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          <Svg width={containerW} height={totalH}>
+          <Svg width={totalW} height={totalH}>
             {pointsStr ? (
               <Polyline
                 points={pointsStr}
@@ -349,7 +358,7 @@ const sm = StyleSheet.create({
   headerLabel: { color: T.cyan, fontSize: 9, letterSpacing: 2.5, flex: 1 },
 
   // Map container — cards are absolutely positioned inside
-  map: { position: "relative", width: "100%" },
+  map: { position: "relative" },
 
   // Card thumbnail
   thumb: {
