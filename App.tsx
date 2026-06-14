@@ -5,24 +5,41 @@ import {
 import Svg, { Circle } from "react-native-svg";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
+import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
 import { Lock, ChevronDown, BookOpen } from "lucide-react-native";
 import { InfoButton, InfoCard, ip } from "./src/components/InfoPopout";
 import { T } from "./src/theme";
 import { CrackleOverlay, Scanlines, ChromaText } from "./src/components/Effects";
 import { DivOperation } from "./src/components/DivOperation";
 import { CodexOperation } from "./src/components/CodexOperation";
+import { GrimoireOperation } from "./src/components/GrimoireOperation";
 import { secureInt, rollReversed, drawWithoutReplacement } from "./src/engine/random";
 import { useEntropyPool, STIR_CAP } from "./src/engine/entropy";
 import { DECK } from "./src/data/tarot";
 import { RUNES } from "./src/data/runes";
 import { SPREADS, OPS, DIV_TABS } from "./src/data/spreads";
+import { migrateDb, saveReading } from "./src/db/grimoire";
 import type { CheatCode } from "./src/data/spreads";
 import type { Mode, CodexTab, DrawnCard, Result, LogEntry } from "./src/types";
 
 const GAUGE_R    = 46;
 const GAUGE_CIRC = 2 * Math.PI * GAUGE_R;
 
+// ── Root: SQLiteProvider shell ───────────────────────────────────────────────
+
 export default function App() {
+  return (
+    <SQLiteProvider databaseName="grimoire.db" onInit={migrateDb}>
+      <AppContent />
+    </SQLiteProvider>
+  );
+}
+
+// ── AppContent: all app state + UI ───────────────────────────────────────────
+
+function AppContent() {
+  const db = useSQLiteContext();
+
   // ── Operation / nav state ──
   const [op,       setOp]       = useState("div");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -36,9 +53,9 @@ export default function App() {
   const [infoVisible, setInfoVisible] = useState(false);
 
   // ── Codex state ──
-  const [codexTab,   setCodexTab]   = useState<CodexTab>("tarot");
-  const [openEntry,  setOpenEntry]  = useState<string | null>(null);
-  const [cheatSel,   setCheatSel]   = useState<CheatCode | null>(null);
+  const [codexTab,  setCodexTab]  = useState<CodexTab>("tarot");
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const [cheatSel,  setCheatSel]  = useState<CheatCode | null>(null);
 
   const { mix, drain, stirs } = useEntropyPool();
   const lastStir   = useRef(0);
@@ -63,27 +80,39 @@ export default function App() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const entropy = drain();
     setCharge(0);
+
     if (mode === "tarot") {
       const card = DECK[secureInt(DECK.length, entropy)];
       const reversed = rollReversed(entropy);
-      setResult({ kind: "cards", cards: [{ ...card, reversed }] });
+      const newResult: Result = { kind: "cards", cards: [{ ...card, reversed }] };
+      setResult(newResult);
       addLog("Tarot", `${card.name}${reversed ? " (rev)" : ""}`);
+      saveReading(db, "tarot", newResult);
+
     } else if (mode === "spread") {
       const picks = drawWithoutReplacement(DECK.length, currentSpread.positions.length, entropy);
       const cards = picks.map((i, k): DrawnCard => ({
         ...DECK[i], reversed: rollReversed(entropy ^ (k + 1)), position: currentSpread.positions[k],
       }));
-      setResult({ kind: "cards", cards, spreadName: currentSpread.name });
+      const newResult: Result = { kind: "cards", cards, spreadName: currentSpread.name };
+      setResult(newResult);
       addLog("Spread", `${currentSpread.name}: ${cards.map((c) => c.name).join(" · ")}`);
+      saveReading(db, "spread", newResult, currentSpread.name);
+
     } else if (mode === "coin") {
       const yes = secureInt(2, entropy) === 0;
-      setResult({ kind: "coin", yes });
+      const newResult: Result = { kind: "coin", yes };
+      setResult(newResult);
       addLog("Binary", yes ? "01 · YES" : "00 · NO");
+      saveReading(db, "coin", newResult);
+
     } else {
       const rune = RUNES[secureInt(RUNES.length, entropy)];
       const reversed = rune.reversible && rollReversed(entropy);
-      setResult({ kind: "rune", rune, reversed });
+      const newResult: Result = { kind: "rune", rune, reversed };
+      setResult(newResult);
       addLog("Rune", `${rune.name}${reversed ? " (merkstave)" : ""}`);
+      saveReading(db, "rune", newResult);
     }
   };
 
@@ -170,6 +199,16 @@ export default function App() {
                   </View>
                 );
               })}
+            </View>
+          ) : op === "grim" ? (
+            <View style={s.branchRow}>
+              <View style={s.branchBar} />
+              <View style={s.branchItem}>
+                <View style={s.branchStem} />
+                <View style={[s.branchBtn, s.branchBtnOn]}>
+                  <Text style={[s.branchTxt, s.branchTxtOn]}>Readings</Text>
+                </View>
+              </View>
             </View>
           ) : (
             <>
@@ -268,6 +307,7 @@ export default function App() {
             setCheatSel={setCheatSel}
           />
         )}
+        {op === "grim" && <GrimoireOperation />}
       </ScrollView>
     </View>
   );

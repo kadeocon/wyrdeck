@@ -86,7 +86,7 @@ export const OPS: Operation[] = [
   { id: "evo", label: "Evocation", phase: "Phase 3", tools: ["Spirit Board (Autouija)", "EVP / Noise Listener", "Servitor Builder", "Entity Grimoire"] },
   { id: "inv", label: "Invocation", phase: "Phase 2", tools: ["AI Familiar (local LLM)", "Elemental Correspondences"] },
   { id: "ill", label: "Illumination", phase: "Phase 2–3", tools: ["Binaural State Inducer", "Meditaid + Biometrics", "GlowStone Candle", "Moon & Planetary Hours", "Scrycloud Scrying"] },
-  { id: "grim", label: "Grimoire", phase: "Phase 2", tools: ["Reading History", "Sigil Archive", "Notes & Interpretations", "Export / Backup"] },
+  { id: "grim", label: "Grimoire", open: true },
 ];
 
 export interface CheatCode { code: string; meaning: string }
