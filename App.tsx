@@ -18,6 +18,7 @@ import { useEntropyPool, STIR_CAP } from "./src/engine/entropy";
 import { DECK, Card, CODEX_GROUPS, SUIT_ICON, ELEMENT_ICON, COURT_ICON } from "./src/data/tarot";
 import { RUNES, Rune } from "./src/data/runes";
 import { SPREADS, OPS, DIV_TABS, CHEATCODES, CheatCode } from "./src/data/spreads";
+import { SpreadMap, type MapCard } from "./src/components/SpreadMap";
 
 // Gauge — SVG viewBox 0 0 100 100, r=46. Circle starts at 3-o'clock; we rotate
 // the SVG -90deg so it starts at 12. No strokeDashoffset needed.
@@ -353,22 +354,31 @@ export default function App() {
 
             {/* Results */}
             {result?.kind === "cards" && (
-              <View style={s.cards}>
-                {result.spreadName && <Text style={s.spreadName}>{result.spreadName}</Text>}
-                {result.cards.map((c, i) => (
-                  <View key={i} style={[s.card, c.reversed && s.cardRev]}>
-                    {c.position && <Text style={s.pos}>{c.position.toUpperCase()}</Text>}
-                    <CardIcon name={c.art} size={36} color={T.yellow} strokeWidth={1.5} />
-                    <View style={s.titleRow}>
-                      <Text style={s.chip}>{c.chip}</Text>
-                      <Text style={s.cardName}>{c.name}</Text>
+              // Spreads that supply a grid render as a positional SpreadMap;
+              // single-card and gridless spreads keep the stacked column.
+              mode === "spread" && currentSpread.grid ? (
+                <SpreadMap
+                  cards={result.cards as MapCard[]}
+                  grid={currentSpread.grid}
+                />
+              ) : (
+                <View style={s.cards}>
+                  {result.spreadName && <Text style={s.spreadName}>{result.spreadName}</Text>}
+                  {result.cards.map((c, i) => (
+                    <View key={i} style={[s.card, c.reversed && s.cardRev]}>
+                      {c.position && <Text style={s.pos}>{c.position.toUpperCase()}</Text>}
+                      <CardIcon name={c.art} size={36} color={T.yellow} strokeWidth={1.5} />
+                      <View style={s.titleRow}>
+                        <Text style={s.chip}>{c.chip}</Text>
+                        <Text style={s.cardName}>{c.name}</Text>
+                      </View>
+                      <Text style={s.arcana}>{c.arcana.toUpperCase()} · {c.element.toUpperCase()}</Text>
+                      {c.reversed && <Text style={s.revBadge}>⟲ REVERSED</Text>}
+                      <Text style={s.meaning}>{c.reversed ? c.rev : c.up}</Text>
                     </View>
-                    <Text style={s.arcana}>{c.arcana.toUpperCase()} · {c.element.toUpperCase()}</Text>
-                    {c.reversed && <Text style={s.revBadge}>⟲ REVERSED</Text>}
-                    <Text style={s.meaning}>{c.reversed ? c.rev : c.up}</Text>
-                  </View>
-                ))}
-              </View>
+                  ))}
+                </View>
+              )
             )}
 
             {result?.kind === "coin" && (

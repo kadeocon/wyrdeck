@@ -1,9 +1,25 @@
 /** Spreads, operation nav, Grabovoi cheatcodes. */
 
+/**
+ * One cell in a spread's positional grid, in reading/draw order.
+ * col/row are 1-indexed. The column scheme for a cross+staff layout is:
+ *   cols 1-3 = cross   col 4 = 8px spacer (skip)   col 5 = staff
+ * Adding a new spread: supply positions[] + grid[] — nothing in the
+ * renderer needs to change.
+ */
+export interface GridCell {
+  col: number;
+  row: number;
+  center?: boolean; // card 1 — the "present" centre of the cross
+  cross?: boolean;  // card 2 — same cell, rotated 90°
+}
+
 export interface Spread {
   id: string;
   name: string;
   positions: string[];
+  /** When present, renders a SpreadMap instead of a stacked column. */
+  grid?: GridCell[];
 }
 
 export const SPREADS: Spread[] = [
@@ -12,7 +28,42 @@ export const SPREADS: Spread[] = [
   { id: "mbs", name: "Mind · Body · Spirit", positions: ["Mind", "Body", "Spirit"] },
   {
     id: "celtic", name: "Celtic Cross (10 cards)",
-    positions: ["Present", "Challenge", "Foundation", "Past", "Crown", "Near Future", "Self", "Environment", "Hopes & Fears", "Outcome"],
+    positions: [
+      "Present", "Challenge", "Foundation", "Recent Past",
+      "Crown / Goal", "Near Future", "The Self", "Environment",
+      "Hopes & Fears", "Outcome",
+    ],
+    grid: [
+      { col: 2, row: 2, center: true }, // 1  Present
+      { col: 2, row: 2, cross: true  }, // 2  Challenge  (lies across card 1)
+      { col: 2, row: 3              }, // 3  Foundation
+      { col: 1, row: 2              }, // 4  Recent Past
+      { col: 2, row: 1              }, // 5  Crown / Goal
+      { col: 3, row: 2              }, // 6  Near Future
+      { col: 5, row: 4              }, // 7  The Self
+      { col: 5, row: 3              }, // 8  Environment
+      { col: 5, row: 2              }, // 9  Hopes & Fears
+      { col: 5, row: 1              }, // 10 Outcome
+    ],
+  },
+  // ── Extensibility smoke-test: Horseshoe (7 cards, arc layout) ──────────────
+  // Demonstrates that adding a new grid spread requires only data — zero
+  // renderer edits. Remove or keep; the SpreadMap handles it automatically.
+  {
+    id: "horseshoe", name: "Horseshoe (7 cards)",
+    positions: [
+      "Past", "Present", "Hidden influences", "Obstacles",
+      "External influences", "Advice", "Outcome",
+    ],
+    grid: [
+      { col: 1, row: 3 }, // 1  Past
+      { col: 1, row: 2 }, // 2  Present
+      { col: 1, row: 1 }, // 3  Hidden influences
+      { col: 2, row: 1 }, // 4  Obstacles
+      { col: 3, row: 1 }, // 5  External influences
+      { col: 3, row: 2 }, // 6  Advice
+      { col: 3, row: 3 }, // 7  Outcome
+    ],
   },
 ];
 
