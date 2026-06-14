@@ -4,12 +4,13 @@
  */
 import { useState, useRef } from "react";
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, GestureResponderEvent, Modal,
+  View, Text, Pressable, ScrollView, StyleSheet, GestureResponderEvent,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
-import { Lock, ChevronDown, BookOpen, RotateCcw, Ban, Info, X } from "lucide-react-native";
+import { Lock, ChevronDown, BookOpen, RotateCcw, Ban } from "lucide-react-native";
+import { InfoButton, InfoCard, ip } from "./src/components/InfoPopout";
 import { T } from "./src/theme";
 import { CardIcon } from "./src/CardIcon";
 import { CrackleOverlay, Scanlines, ChromaText } from "./src/components/Effects";
@@ -159,26 +160,6 @@ export default function App() {
       <CrackleOverlay />
       <Scanlines />
 
-      {/* ── Info modal ── */}
-      <Modal visible={infoVisible} transparent animationType="fade" onRequestClose={() => setInfoVisible(false)}>
-        <Pressable style={s.modalBackdrop} onPress={() => setInfoVisible(false)}>
-          <View style={s.modalCard}>
-            <View style={s.modalHeader}>
-              <Text style={s.modalTitle}>RITUAL ENTROPY</Text>
-              <Pressable onPress={() => setInfoVisible(false)}>
-                <X size={16} color={T.dim} />
-              </Pressable>
-            </View>
-            <Text style={s.modalBody}>
-              Stir the ring to feed entropy into the pool (FNV-1a hash), XOR-mixed with the
-              OS CSPRNG at draw time.{"\n\n"}
-              Charging is optional — randomness is never weaker without it. The ritual act
-              of stirring layers your body's micro-tremors into the seed.
-            </Text>
-          </View>
-        </Pressable>
-      </Modal>
-
       {/* ── Fixed header — never scrolls ── */}
       <View style={s.header}>
         <Text style={s.eyebrow} numberOfLines={1} adjustsFontSizeToFit>
@@ -273,6 +254,7 @@ export default function App() {
 
         {/* Ring — only shown in divination */}
         {op === "div" && (
+          <>
           <View style={s.ringRow}>
             {/* Left spacer keeps ring centered */}
             <View style={s.ringRowSide} />
@@ -291,8 +273,8 @@ export default function App() {
               />
               {/* Visual ring */}
               <View style={s.ring} pointerEvents="none">
-                <Text style={s.chargeTxt}>{charge}%</Text>
-                <Text style={s.hint}>stir to charge</Text>
+                <Text style={s.chargeTxt}>{Math.min(charge, 100)}%</Text>
+                {charge < 100 && <Text style={s.hint}>stir to charge</Text>}
               </View>
               {/* Charge gauge — no strokeDashoffset; rotation alone positions start at 12 */}
               <View style={s.gauge} pointerEvents="none">
@@ -315,11 +297,24 @@ export default function App() {
 
             {/* Info button — right side, bottom-aligned */}
             <View style={s.ringRowSide}>
-              <Pressable style={s.infoBtn} onPress={() => setInfoVisible(true)}>
-                <Info size={16} color={T.dim} />
-              </Pressable>
+              <InfoButton
+                open={infoVisible}
+                onToggle={() => setInfoVisible((o) => !o)}
+                label="About ritual entropy"
+              />
             </View>
           </View>
+          {infoVisible && (
+            <InfoCard title="RITUAL ENTROPY">
+              <Text style={ip.body}>
+                Stir the ring to feed entropy into the pool (FNV-1a hash), XOR-mixed
+                with the OS CSPRNG at draw time.{"\n\n"}
+                Charging is optional — randomness is never weaker without it. The ritual
+                act of stirring layers your body's micro-tremors into the seed.
+              </Text>
+            </InfoCard>
+          )}
+          </>
         )}
       </View>
 
@@ -521,7 +516,7 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.void },
 
   // ── Layout ──
-  header: { alignItems: "center", paddingTop: 40, paddingHorizontal: 20, zIndex: 50, overflow: "visible" },
+  header: { alignItems: "center", paddingTop: 40, paddingBottom: 10, paddingHorizontal: 20, zIndex: 50, overflow: "visible" },
   body: { flex: 1 },
   bodyContent: { alignItems: "center", padding: 20, paddingTop: 16, paddingBottom: 48 },
 
@@ -569,9 +564,8 @@ const s = StyleSheet.create({
   lockNote: { color: T.red, fontSize: 10, letterSpacing: 2, marginTop: 8 },
 
   // ── Ring row (ring centered, info button right) ──
-  ringRow: { flexDirection: "row", alignItems: "flex-end", marginTop: 6, marginBottom: 10 },
+  ringRow: { flexDirection: "row", alignItems: "flex-end", marginTop: 6, marginBottom: 6 },
   ringRowSide: { width: 40, alignItems: "center", justifyContent: "flex-end", paddingBottom: 12 },
-  infoBtn: { padding: 6 },
 
   // ── Stir ring ──
   ringWrap: { width: 240, height: 240, alignItems: "center", justifyContent: "center" },
@@ -594,16 +588,6 @@ const s = StyleSheet.create({
     elevation: 10,
   },
   drawTxt: { color: T.yellow, fontSize: 14, letterSpacing: 3 },
-
-  // ── Info modal ──
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", alignItems: "center", justifyContent: "center" },
-  modalCard: {
-    width: "82%", maxWidth: 360, backgroundColor: T.panel,
-    borderWidth: 1, borderColor: T.cyan, borderRadius: 6, padding: 20, gap: 12,
-  },
-  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  modalTitle: { color: T.cyan, fontSize: 11, letterSpacing: 3 },
-  modalBody: { color: T.dim, fontSize: 12, lineHeight: 19 },
 
   // ── Spread sub-picker ──
   spreadWrap: { width: "100%", alignItems: "center", marginBottom: 12, gap: 10 },

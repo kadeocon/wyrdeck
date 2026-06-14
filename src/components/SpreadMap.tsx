@@ -34,9 +34,10 @@ import {
   LayoutChangeEvent, useWindowDimensions,
 } from "react-native";
 import Svg, { Polyline } from "react-native-svg";
-import { RotateCcw, X, Info } from "lucide-react-native";
+import { RotateCcw, X } from "lucide-react-native";
 import { T } from "../theme";
 import { CardIcon } from "../CardIcon";
+import { InfoButton, InfoCard, ip } from "./InfoPopout";
 import type { Card } from "../data/tarot";
 import type { GridCell } from "../data/spreads";
 
@@ -246,31 +247,26 @@ export function SpreadMap({ cards, grid }: Props) {
         <Text style={sm.headerLabel} numberOfLines={1} adjustsFontSizeToFit>
           SPREAD MAP · {cards.length} CARDS
         </Text>
-        <Pressable
-          style={[sm.infoBtn, infoOpen && sm.infoBtnOn]}
-          onPress={() => setInfoOpen(o => !o)}
-          accessibilityRole="button"
-          accessibilityLabel="How to read this spread"
-          accessibilityState={{ expanded: infoOpen }}
-        >
-          <Info size={13} color={infoOpen ? T.cyan : T.dim} />
-        </Pressable>
+        <InfoButton
+          open={infoOpen}
+          onToggle={() => setInfoOpen(o => !o)}
+          label="How to read this spread"
+        />
       </View>
 
       {/* ── Info pop-out ── */}
       {infoOpen && (
-        <View style={sm.infoPop} accessibilityRole="none">
-          <Text style={sm.infoTitle}>READING THE SPREAD</Text>
-          <Text style={sm.infoBody}>
-            The <Text style={sm.infoB}>cross</Text> (1–6) maps the situation;
-            the <Text style={sm.infoB}>staff</Text> (7–10) maps where it's heading.
+        <InfoCard title="READING THE SPREAD">
+          <Text style={ip.body}>
+            The <Text style={ip.bold}>cross</Text> (1–6) maps the situation;
+            the <Text style={ip.bold}>staff</Text> (7–10) maps where it's heading.
             {"\n\n"}
             Card 2 lies across card 1 — the heart of the matter and what crosses it.
             {"\n\n"}
-            Follow the <Text style={sm.infoRed}>red line</Text> in number order.
+            Follow the <Text style={ip.red}>red line</Text> in number order.
             Tap any card for its full meaning.
           </Text>
-        </View>
+        </InfoCard>
       )}
 
       {/* ── Map ── */}
@@ -357,22 +353,6 @@ const sm = StyleSheet.create({
   // Header
   headerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   headerLabel: { color: T.cyan, fontSize: 9, letterSpacing: 2.5, flex: 1 },
-  infoBtn: {
-    width: 26, height: 26, borderRadius: 13,
-    borderWidth: 1, borderColor: T.line, backgroundColor: T.panel,
-    alignItems: "center", justifyContent: "center",
-  },
-  infoBtnOn: { borderColor: T.cyan },
-
-  // Info pop-out
-  infoPop: {
-    backgroundColor: T.void, borderWidth: 1, borderColor: T.cyan,
-    borderRadius: 7, padding: 13, gap: 6,
-  },
-  infoTitle: { color: T.cyan, fontSize: 9, letterSpacing: 2.5 },
-  infoBody:  { color: T.dim, fontSize: 11.5, lineHeight: 18 },
-  infoB:     { color: T.bone, fontWeight: "600" },
-  infoRed:   { color: T.red,  fontWeight: "600" },
 
   // Map container — cards are absolutely positioned inside
   map: { position: "relative", width: "100%" },
