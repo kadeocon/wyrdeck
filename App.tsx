@@ -341,7 +341,7 @@ export default function App() {
                   {SPREADS.map((sp) => (
                     <Pressable key={sp.id}
                       style={[s.tab, spreadId === sp.id && s.tabOn]}
-                      onPress={() => setSpreadId(sp.id)}>
+                      onPress={() => { setSpreadId(sp.id); setResult(null); }}>
                       <Text style={[s.tabTxt, spreadId === sp.id && s.tabTxtOn]}>{sp.name}</Text>
                     </Pressable>
                   ))}

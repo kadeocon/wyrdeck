@@ -204,20 +204,22 @@ export function SpreadMap({ cards, grid }: Props) {
   const cardH  = Math.round(cardW / ASPECT);
   const totalH = maxRow * cardH + (maxRow - 1) * ROW_GAP;
 
-  const placed: Placed[] = cards.map((card, i) => {
-    const cell = grid[i];
-    const left = colLeft(cell.col, cardW);
-    const top  = rowTop(cell.row, cardH);
-    return {
-      ...card,
-      n: i + 1,
-      cell,
-      left,
-      top,
-      cx: left + cardW / 2,
-      cy: top  + cardH / 2,
-    };
-  });
+  const placed: Placed[] = cards
+    .filter((_, i) => grid[i] != null) // guard: skip cards with no grid slot
+    .map((card, i) => {
+      const cell = grid[i];
+      const left = colLeft(cell.col, cardW);
+      const top  = rowTop(cell.row, cardH);
+      return {
+        ...card,
+        n: i + 1,
+        cell,
+        left,
+        top,
+        cx: left + cardW / 2,
+        cy: top  + cardH / 2,
+      };
+    });
 
   // ── Polyline: reading order, deduplicate coincident centers ───────────────
   const sorted = [...placed].sort((a, b) => a.n - b.n);
