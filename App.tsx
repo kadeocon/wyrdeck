@@ -12,6 +12,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { T } from "./src/theme";
 import { CardIcon } from "./src/CardIcon";
+import { CrackleOverlay, Scanlines, ChromaText } from "./src/components/Effects";
 import { secureInt, rollReversed, drawWithoutReplacement } from "./src/engine/random";
 import { useEntropyPool, STIR_CAP } from "./src/engine/entropy";
 import { DECK, Card } from "./src/data/tarot";
@@ -81,10 +82,12 @@ export default function App() {
   return (
     <View style={s.root}>
       <StatusBar style="light" />
+      <CrackleOverlay />
+      <Scanlines />
       <ScrollView contentContainerStyle={s.scroll}>
         <Text style={s.eyebrow}>ORACLE ENGINE · EXPO PORT · CSPRNG + RITUAL ENTROPY</Text>
         <Text style={s.super}>TECHNOMANCER'S</Text>
-        <Text style={s.title}>WYRDECK</Text>
+        <ChromaText tone="bone" style={s.title}>WYRDECK</ChromaText>
 
         <View style={s.tabs}>
           {DIV_TABS.map((tb) => (
@@ -162,9 +165,9 @@ export default function App() {
 
         {result?.kind === "coin" && (
           <View style={s.card}>
-            <Text style={[s.chroma, { color: result.yes ? T.cyan : T.red }]}>
+            <ChromaText tone={result.yes ? "yes" : "no"} style={s.chroma}>
               {result.yes ? "YES" : "NO"}
-            </Text>
+            </ChromaText>
             <Text style={s.seg}>{result.yes ? "0 1" : "0 0"}</Text>
           </View>
         )}
