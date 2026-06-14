@@ -1,25 +1,30 @@
 /**
  * Technomancer's WyrDeck — Expo port.
- * Working divination core: single tarot pull, spreads (incl. Celtic Cross),
- * binary, runes. CSPRNG + ritual touch-stir entropy, 30% reversals.
- * Operation menu + skill-tree nav shell (non-div ops locked, coming later).
+ * Divination core + operation menu + skill-tree nav + Codex.
  */
 import { useState, useRef } from "react";
 import {
   View, Text, Pressable, ScrollView, StyleSheet, GestureResponderEvent,
 } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { StatusBar } from "expo-status-bar";
-import { Lock, ChevronDown, BookOpen } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import { Lock, ChevronDown, BookOpen, RotateCcw, Ban } from "lucide-react-native";
 import { T } from "./src/theme";
 import { CardIcon } from "./src/CardIcon";
 import { CrackleOverlay, Scanlines, ChromaText } from "./src/components/Effects";
 import { secureInt, rollReversed, drawWithoutReplacement } from "./src/engine/random";
 import { useEntropyPool, STIR_CAP } from "./src/engine/entropy";
-import { DECK, Card } from "./src/data/tarot";
+import { DECK, Card, CODEX_GROUPS, SUIT_ICON, ELEMENT_ICON, COURT_ICON } from "./src/data/tarot";
 import { RUNES, Rune } from "./src/data/runes";
-import { SPREADS, OPS, DIV_TABS } from "./src/data/spreads";
+import { SPREADS, OPS, DIV_TABS, CHEATCODES } from "./src/data/spreads";
+
+// Gauge constants — matches v0.5 SVG (viewBox 0 0 100 100, r=46)
+const GAUGE_R = 46;
+const GAUGE_CIRC = 2 * Math.PI * GAUGE_R; // ≈ 289
 
 type Mode = (typeof DIV_TABS)[number]["id"];
+type CodexTab = "tarot" | "runes" | "codes";
 
 type DrawnCard = Card & { reversed: boolean; position?: string };
 type Result =
@@ -29,6 +34,57 @@ type Result =
 
 interface LogEntry { t: string; mode: string; text: string }
 
+// ── Codex card face (expand-on-tap) ────────────────────────────────────────
+
+function CodexCardFace({ card }: { card: Card }) {
+  return (
+    <View style={cx.face}>
+      <CardIcon name={card.art} size={26} color={T.yellow} strokeWidth={1.5} />
+      <View style={cx.titleRow}>
+        <Text style={cx.chip}>{card.chip}</Text>
+        <Text style={cx.name}>{card.name}</Text>
+      </View>
+      <Text style={cx.arcana}>{card.arcana.toUpperCase()} · {card.element.toUpperCase()}</Text>
+      <View style={cx.metaRow}>
+        <View style={[cx.metaIcon, cx.metaSuit]}>
+          <CardIcon name={SUIT_ICON[card.suit]} size={11} color={T.yellow} strokeWidth={1.5} />
+        </View>
+        <View style={[cx.metaIcon, cx.metaElem]}>
+          <CardIcon name={ELEMENT_ICON[card.element]} size={11} color={T.cyan} strokeWidth={1.5} />
+        </View>
+        {card.court && (
+          <View style={[cx.metaIcon, cx.metaCourt]}>
+            <CardIcon name={COURT_ICON[card.court]} size={11} color={T.red} strokeWidth={1.5} />
+          </View>
+        )}
+      </View>
+      <View style={cx.bothMeanings}>
+        <Text style={cx.meaningUp}><Text style={cx.labelUp}>↑ upright  </Text>{card.up}</Text>
+        <Text style={cx.meaningDn}><Text style={cx.labelDn}>↓ reversed  </Text>{card.rev}</Text>
+      </View>
+    </View>
+  );
+}
+
+function CodexRuneFace({ rune }: { rune: Rune }) {
+  return (
+    <View style={cx.face}>
+      <Text style={cx.bigrune}>{rune.glyph}</Text>
+      <Text style={cx.name}>{rune.name}</Text>
+      <Text style={cx.arcana}>ELDER FUTHARK</Text>
+      <Text style={cx.meaning}>{rune.meaning}</Text>
+      <View style={cx.mkRow}>
+        {rune.reversible
+          ? <><RotateCcw size={11} color={T.cyan} /><Text style={cx.mkTxt}>reversible — merkstave form applies</Text></>
+          : <><Ban size={11} color={T.dim} /><Text style={[cx.mkTxt, { color: T.dim }]}>non-reversible</Text></>
+        }
+      </View>
+    </View>
+  );
+}
+
+// ── Main ────────────────────────────────────────────────────────────────────
+
 export default function App() {
   const [op, setOp] = useState("div");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -36,12 +92,19 @@ export default function App() {
   const [spreadId, setSpreadId] = useState("ppf");
   const [result, setResult] = useState<Result | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
   const [charge, setCharge] = useState(0);
+  // Codex state
+  const [codexTab, setCodexTab] = useState<CodexTab>("tarot");
+  const [openEntry, setOpenEntry] = useState<string | null>(null);
+  const [cheatSel, setCheatSel] = useState<[string, string] | null>(null);
+
   const { mix, drain, stirs } = useEntropyPool();
   const lastStir = useRef(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   const currentOp = OPS.find((o) => o.id === op)!;
+  const currentSpread = SPREADS.find((s) => s.id === spreadId)!;
 
   const onStir = (e: GestureResponderEvent) => {
     const now = Date.now();
@@ -56,6 +119,7 @@ export default function App() {
     setLog((l) => [{ t: new Date().toLocaleTimeString(), mode, text }, ...l].slice(0, 30));
 
   const draw = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const entropy = drain();
     setCharge(0);
     if (mode === "tarot") {
@@ -64,7 +128,7 @@ export default function App() {
       setResult({ kind: "cards", cards: [{ ...card, reversed }] });
       addLog("Tarot", `${card.name}${reversed ? " (rev)" : ""}`);
     } else if (mode === "spread") {
-      const spread = SPREADS.find((s) => s.id === spreadId)!;
+      const spread = currentSpread;
       const picks = drawWithoutReplacement(DECK.length, spread.positions.length, entropy);
       const cards = picks.map((i, k): DrawnCard => ({
         ...DECK[i], reversed: rollReversed(entropy), position: spread.positions[k],
@@ -83,13 +147,18 @@ export default function App() {
     }
   };
 
+  const gaugeStroke = (GAUGE_CIRC * Math.min(charge, 100)) / 100;
+  const drawLabel = mode === "coin" ? "TOSS" : "DRAW";
+
   return (
     <View style={s.root}>
       <StatusBar style="light" />
       <CrackleOverlay />
       <Scanlines />
       <ScrollView contentContainerStyle={s.scroll}>
-        <Text style={s.eyebrow}>ORACLE ENGINE · EXPO PORT · CSPRNG + RITUAL ENTROPY</Text>
+        <Text style={s.eyebrow} numberOfLines={1} adjustsFontSizeToFit>
+          ORACLE ENGINE · EXPO PORT · CSPRNG + RITUAL ENTROPY
+        </Text>
         <Text style={s.super}>TECHNOMANCER'S</Text>
         <ChromaText tone="bone" style={s.title}>WYRDECK</ChromaText>
 
@@ -98,11 +167,7 @@ export default function App() {
           <Pressable style={s.menuBtn} onPress={() => setMenuOpen((o) => !o)}>
             {!currentOp.open && <Lock size={11} color={T.cyan} />}
             <Text style={s.menuBtnTxt}>{currentOp.label.toUpperCase()}</Text>
-            <ChevronDown
-              size={13}
-              color={T.cyan}
-              style={menuOpen ? s.chevronUp : undefined}
-            />
+            <ChevronDown size={13} color={T.cyan} style={menuOpen ? s.chevronUp : undefined} />
           </Pressable>
           {menuOpen && (
             <View style={s.menuDropdown}>
@@ -110,7 +175,7 @@ export default function App() {
                 <Pressable
                   key={o.id}
                   style={[s.menuItem, op === o.id && s.menuItemOn]}
-                  onPress={() => { setOp(o.id); setMenuOpen(false); setResult(null); }}
+                  onPress={() => { setOp(o.id); setMenuOpen(false); setResult(null); setOpenEntry(null); }}
                 >
                   {o.open
                     ? <BookOpen size={11} color={op === o.id ? T.cyan : T.dim} />
@@ -139,12 +204,28 @@ export default function App() {
                     style={[s.branchBtn, mode === tb.id && s.branchBtnOn]}
                     onPress={() => { setMode(tb.id); setResult(null); }}
                   >
-                    <Text style={[s.branchTxt, mode === tb.id && s.branchTxtOn]}>
-                      {tb.label}
-                    </Text>
+                    <Text style={[s.branchTxt, mode === tb.id && s.branchTxtOn]}>{tb.label}</Text>
                   </Pressable>
                 </View>
               ))}
+            </View>
+          ) : op === "codex" ? (
+            <View style={s.branchRow}>
+              <View style={s.branchBar} />
+              {(["tarot", "runes", "codes"] as CodexTab[]).map((tab) => {
+                const label = tab === "tarot" ? "Tarot" : tab === "runes" ? "Runes" : "Cheatcodes";
+                return (
+                  <View key={tab} style={s.branchItem}>
+                    <View style={s.branchStem} />
+                    <Pressable
+                      style={[s.branchBtn, codexTab === tab && s.branchBtnOn]}
+                      onPress={() => { setCodexTab(tab); setOpenEntry(null); setCheatSel(null); }}
+                    >
+                      <Text style={[s.branchTxt, codexTab === tab && s.branchTxtOn]}>{label}</Text>
+                    </Pressable>
+                  </View>
+                );
+              })}
             </View>
           ) : (
             <>
@@ -165,43 +246,53 @@ export default function App() {
           )}
         </View>
 
+        {/* ── Divination ── */}
         {op === "div" && (
           <>
-            {mode === "spread" && (
-              <View style={s.tabs}>
-                {SPREADS.map((sp) => (
-                  <Pressable key={sp.id}
-                    style={[s.tab, spreadId === sp.id && s.tabOn]}
-                    onPress={() => setSpreadId(sp.id)}>
-                    <Text style={[s.tabTxt, spreadId === sp.id && s.tabTxtOn]}>{sp.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-
+            {/* Ring + draw */}
             <View style={s.ringWrap}>
+              {/* Stir capture — claims touch immediately so ScrollView can't steal */}
               <View
                 style={[StyleSheet.absoluteFill, s.ringStir]}
                 onStartShouldSetResponder={(e) => {
                   touchStart.current = { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY };
-                  return false;
-                }}
-                onMoveShouldSetResponder={(e) => {
-                  if (!touchStart.current) return false;
-                  const dx = e.nativeEvent.pageX - touchStart.current.x;
-                  const dy = e.nativeEvent.pageY - touchStart.current.y;
-                  return Math.hypot(dx, dy) > 8;
+                  return true;
                 }}
                 onResponderMove={onStir}
                 onResponderRelease={() => { touchStart.current = null; }}
                 onResponderTerminate={() => { touchStart.current = null; }}
               />
+              {/* Visual ring */}
               <View style={s.ring} pointerEvents="none">
                 <Text style={s.chargeTxt}>{charge}%</Text>
                 <Text style={s.hint}>stir to charge</Text>
               </View>
-              <Pressable style={s.draw} onPress={draw}>
-                <Text style={s.drawTxt}>DRAW</Text>
+              {/* Charge gauge SVG — sits over ring, pointer-events none */}
+              <View style={s.gauge} pointerEvents="none">
+                <Svg width={256} height={256} viewBox="0 0 100 100" style={s.gaugeSvg}>
+                  <Circle
+                    cx={50} cy={50} r={GAUGE_R}
+                    fill="none" stroke={T.line} strokeWidth={1.5}
+                  />
+                  {charge > 0 && (
+                    <Circle
+                      cx={50} cy={50} r={GAUGE_R}
+                      fill="none"
+                      stroke={T.cyan}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeDasharray={`${gaugeStroke} ${GAUGE_CIRC}`}
+                      strokeDashoffset={GAUGE_CIRC / 4}
+                    />
+                  )}
+                </Svg>
+              </View>
+              {/* Draw / Toss button — sibling of stir layer, always fires */}
+              <Pressable
+                style={({ pressed }) => [s.draw, pressed && s.drawPressed]}
+                onPress={draw}
+              >
+                <Text style={s.drawTxt}>{drawLabel}</Text>
               </Pressable>
             </View>
             <Text style={s.hintWide}>
@@ -209,6 +300,30 @@ export default function App() {
               OS CSPRNG at draw time. Charging is optional — randomness is never weaker without it.
             </Text>
 
+            {/* Spread sub-picker — below ring, red bracket style */}
+            {mode === "spread" && (
+              <View style={s.spreadWrap}>
+                <View style={s.spreadBracket}>
+                  <View style={s.bracketLine} />
+                  <Text style={s.bracketLabel}>SPREAD TYPE</Text>
+                  <View style={s.bracketLine} />
+                </View>
+                <View style={s.tabs}>
+                  {SPREADS.map((sp) => (
+                    <Pressable key={sp.id}
+                      style={[s.tab, spreadId === sp.id && s.tabOn]}
+                      onPress={() => setSpreadId(sp.id)}>
+                      <Text style={[s.tabTxt, spreadId === sp.id && s.tabTxtOn]}>{sp.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Text style={s.positionHint}>
+                  {currentSpread.positions.map((p, i) => `${i + 1}·${p}`).join("  ")}
+                </Text>
+              </View>
+            )}
+
+            {/* Results */}
             {result?.kind === "cards" && (
               <View style={s.cards}>
                 {result.spreadName && <Text style={s.spreadName}>{result.spreadName}</Text>}
@@ -246,10 +361,14 @@ export default function App() {
               </View>
             )}
 
+            {/* Session log — accordion */}
             {log.length > 0 && (
               <View style={s.log}>
-                <Text style={s.arcana}>SESSION LOG</Text>
-                {log.map((e, i) => (
+                <Pressable style={s.logHeader} onPress={() => setLogOpen((o) => !o)}>
+                  <Text style={s.arcana}>SESSION LOG</Text>
+                  <ChevronDown size={13} color={T.dim} style={logOpen ? s.chevronUp : undefined} />
+                </Pressable>
+                {logOpen && log.map((e, i) => (
                   <View key={i} style={s.logRow}>
                     <Text style={s.logT}>{e.t}</Text>
                     <Text style={s.logM}>{e.mode}</Text>
@@ -260,15 +379,103 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* ── Codex ── */}
+        {op === "codex" && (
+          <View style={s.codex}>
+            {codexTab === "codes" && (
+              <>
+                <View style={s.codePanel}>
+                  <Text style={s.arcana}>SELECTED CODE</Text>
+                  <Text style={s.bigCode}>{cheatSel ? cheatSel[0] : "·····"}</Text>
+                  {cheatSel && <Text style={s.codeMeaning}>{cheatSel[1]}</Text>}
+                  <Text style={s.howTo}>
+                    Hold your intent, gaze at the sequence, and repeat it silently — or write it, trace it, or visualize each digit glowing. Folk-numerology sequences (Grabovoi-style) circulated as focus tools — not medicine.
+                  </Text>
+                </View>
+                <View style={s.codexGrid}>
+                  {CHEATCODES.map(([code, meaning]) => (
+                    <Pressable
+                      key={code}
+                      style={[s.entry, cheatSel?.[0] === code && s.entryOn]}
+                      onPress={() => setCheatSel([code, meaning])}
+                    >
+                      <Text style={s.codeNum}>{code}</Text>
+                      <Text style={s.entryName}>{meaning}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {codexTab === "tarot" && CODEX_GROUPS.map((g) => (
+              <View key={g.title} style={s.codexGroup}>
+                <Text style={s.codexGroupTitle}>{g.title.toUpperCase()}</Text>
+                <View style={s.codexGrid}>
+                  {g.items.map((c) => {
+                    const open = openEntry === c.name;
+                    return (
+                      <Pressable
+                        key={c.name}
+                        style={[s.entry, open && s.entryOpen]}
+                        onPress={() => setOpenEntry(open ? null : c.name)}
+                      >
+                        {open ? (
+                          <CodexCardFace card={c} />
+                        ) : (
+                          <>
+                            <Text style={s.entryChip}>{c.chip}</Text>
+                            <Text style={s.entryName}>{c.name}</Text>
+                            <CardIcon name={SUIT_ICON[c.suit]} size={13} color={T.cyan} strokeWidth={1.5} />
+                          </>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+
+            {codexTab === "runes" && (
+              <View style={s.codexGrid}>
+                {RUNES.map((rune) => {
+                  const open = openEntry === rune.name;
+                  return (
+                    <Pressable
+                      key={rune.name}
+                      style={[s.entry, open && s.entryOpen]}
+                      onPress={() => setOpenEntry(open ? null : rune.name)}
+                    >
+                      {open ? (
+                        <CodexRuneFace rune={rune} />
+                      ) : (
+                        <>
+                          <Text style={s.runeGlyph}>{rune.glyph}</Text>
+                          <Text style={s.entryName}>{rune.name}</Text>
+                          {rune.reversible
+                            ? <RotateCcw size={13} color={T.cyan} />
+                            : <Ban size={13} color={T.dim} />
+                          }
+                        </>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
 }
 
+// ── Styles ──────────────────────────────────────────────────────────────────
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: T.void },
   scroll: { alignItems: "center", padding: 20, paddingTop: 64, paddingBottom: 48 },
-  eyebrow: { color: T.dim, fontSize: 9, letterSpacing: 3, marginBottom: 10 },
+  eyebrow: { color: T.dim, fontSize: 9, letterSpacing: 2, marginBottom: 10, width: "100%", textAlign: "center" },
   super: { color: T.dim, fontSize: 11, letterSpacing: 6 },
   title: { color: T.cyan, fontSize: 38, fontWeight: "700", letterSpacing: 8, marginBottom: 18 },
 
@@ -282,13 +489,9 @@ const s = StyleSheet.create({
   menuBtnTxt: { color: T.cyan, fontSize: 12, letterSpacing: 2, flex: 1, textAlign: "center" },
   chevronUp: { transform: [{ rotate: "180deg" }] },
   menuDropdown: {
-    backgroundColor: T.void, borderWidth: 1, borderColor: T.cyan,
-    borderTopWidth: 0, marginTop: 0,
+    backgroundColor: T.void, borderWidth: 1, borderColor: T.cyan, borderTopWidth: 0,
   },
-  menuItem: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    paddingVertical: 9, paddingHorizontal: 12,
-  },
+  menuItem: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 9, paddingHorizontal: 12 },
   menuItemOn: { backgroundColor: T.panel },
   menuItemTxt: { color: T.dim, fontSize: 11, letterSpacing: 1.5, flex: 1 },
   menuItemTxtOn: { color: T.cyan },
@@ -297,20 +500,11 @@ const s = StyleSheet.create({
   // ── Skill tree ──
   skillTree: { alignItems: "center", width: "100%", marginBottom: 14 },
   trunk: { width: 1, height: 14, backgroundColor: T.red },
-  branchRow: {
-    flexDirection: "row", flexWrap: "wrap", justifyContent: "center",
-    paddingTop: 10, width: "100%",
-  },
-  branchBar: {
-    position: "absolute", top: 0, left: "8%", right: "8%",
-    height: 1, backgroundColor: T.red,
-  },
+  branchRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", paddingTop: 10, width: "100%" },
+  branchBar: { position: "absolute", top: 0, left: "8%", right: "8%", height: 1, backgroundColor: T.red },
   branchItem: { alignItems: "center", marginHorizontal: 5, marginBottom: 6 },
   branchStem: { width: 1, height: 10, backgroundColor: T.red },
-  branchBtn: {
-    borderWidth: 1, borderColor: T.line, borderRadius: 2,
-    paddingVertical: 7, paddingHorizontal: 13,
-  },
+  branchBtn: { borderWidth: 1, borderColor: T.line, borderRadius: 2, paddingVertical: 7, paddingHorizontal: 13 },
   branchBtnOn: { borderColor: T.yellow },
   branchTxt: { color: T.dim, fontSize: 11, letterSpacing: 1.5 },
   branchTxtOn: { color: T.yellow },
@@ -322,29 +516,40 @@ const s = StyleSheet.create({
   branchLockedTxt: { color: T.dim, fontSize: 10 },
   lockNote: { color: T.red, fontSize: 10, letterSpacing: 2, marginTop: 8 },
 
-  // ── Spread sub-picker ──
-  tabs: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6, marginBottom: 14 },
-  tab: { borderWidth: 1, borderColor: T.line, paddingVertical: 7, paddingHorizontal: 13, borderRadius: 2 },
-  tabOn: { borderColor: T.cyan },
-  tabTxt: { color: T.dim, fontSize: 11, letterSpacing: 1.5 },
-  tabTxtOn: { color: T.cyan },
-
   // ── Stir ring ──
   ringWrap: { width: 240, height: 240, marginTop: 8, alignItems: "center", justifyContent: "center" },
   ringStir: { borderRadius: 120 },
   ring: {
     width: 240, height: 240, borderRadius: 120, borderWidth: 1, borderColor: T.line,
-    backgroundColor: T.panel, alignItems: "center", justifyContent: "center",
-    position: "absolute",
+    backgroundColor: T.panel, alignItems: "center", justifyContent: "center", position: "absolute",
   },
   chargeTxt: { color: T.cyan, fontSize: 12, position: "absolute", top: 28 },
   hint: { color: T.dim, fontSize: 9, letterSpacing: 2, position: "absolute", top: 46 },
+  gauge: { position: "absolute", width: 256, height: 256, alignItems: "center", justifyContent: "center" },
+  gaugeSvg: { transform: [{ rotate: "-90deg" }] },
   draw: {
     width: 92, height: 92, borderRadius: 46, borderWidth: 1, borderColor: T.yellow,
     backgroundColor: T.void, alignItems: "center", justifyContent: "center",
   },
+  drawPressed: {
+    borderColor: T.yellow, backgroundColor: "rgba(255,233,74,0.12)",
+    shadowColor: T.yellow, shadowOpacity: 0.7, shadowRadius: 14, shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+  },
   drawTxt: { color: T.yellow, fontSize: 14, letterSpacing: 3 },
   hintWide: { color: T.dim, fontSize: 10, lineHeight: 17, textAlign: "center", maxWidth: 340, marginTop: 12, marginBottom: 8 },
+
+  // ── Spread sub-picker (below ring) ──
+  spreadWrap: { width: "100%", alignItems: "center", marginTop: 12, gap: 10 },
+  spreadBracket: { flexDirection: "row", alignItems: "center", gap: 10, width: "80%" },
+  bracketLine: { flex: 1, height: 1, backgroundColor: T.red },
+  bracketLabel: { color: T.red, fontSize: 9, letterSpacing: 2.5 },
+  tabs: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 6 },
+  tab: { borderWidth: 1, borderColor: T.line, paddingVertical: 7, paddingHorizontal: 13, borderRadius: 2 },
+  tabOn: { borderColor: T.cyan },
+  tabTxt: { color: T.dim, fontSize: 11, letterSpacing: 1.5 },
+  tabTxtOn: { color: T.cyan },
+  positionHint: { color: T.dim, fontSize: 9, letterSpacing: 1, textAlign: "center" },
 
   // ── Cards / results ──
   cards: { width: "100%", alignItems: "center", gap: 12, marginTop: 12 },
@@ -371,9 +576,65 @@ const s = StyleSheet.create({
   bigRuneRev: { color: T.red, transform: [{ rotate: "180deg" }] },
 
   // ── Session log ──
-  log: { width: "100%", maxWidth: 560, borderTopWidth: 1, borderTopColor: T.line, paddingTop: 14, marginTop: 22, gap: 5 },
+  log: { width: "100%", maxWidth: 560, borderTopWidth: 1, borderTopColor: T.line, paddingTop: 10, marginTop: 22, gap: 4 },
+  logHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 6 },
   logRow: { flexDirection: "row", gap: 10 },
   logT: { color: T.dim, fontSize: 10, minWidth: 64 },
   logM: { color: T.red, fontSize: 10, minWidth: 48 },
   logTxt: { color: T.bone, fontSize: 10.5, flex: 1 },
+
+  // ── Codex ──
+  codex: { width: "100%", maxWidth: 600, gap: 16, alignItems: "center" },
+  codexGroup: { width: "100%" },
+  codexGroupTitle: { color: T.yellow, fontSize: 9, letterSpacing: 2.5, marginBottom: 8, marginTop: 4 },
+  codexGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7, justifyContent: "center", width: "100%" },
+  entry: {
+    backgroundColor: T.panel, borderWidth: 1, borderColor: T.line, borderRadius: 4,
+    padding: 9, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 7,
+    width: "47%",
+  },
+  entryOn: { borderColor: T.cyan },
+  entryOpen: { width: "100%", padding: 0, borderColor: T.yellow, flexDirection: "column" },
+  entryChip: {
+    color: T.cyan, borderWidth: 1, borderColor: T.cyan, borderRadius: 999,
+    minWidth: 22, textAlign: "center", fontSize: 9, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  entryName: { color: T.bone, fontSize: 11.5, flex: 1 },
+  runeGlyph: { color: T.yellow, fontSize: 18 },
+  codeNum: { color: T.yellow, fontSize: 13, letterSpacing: 1.5 },
+  codePanel: {
+    width: "100%", backgroundColor: T.panel, borderWidth: 1, borderColor: T.line,
+    borderTopWidth: 2, borderTopColor: T.yellow, borderRadius: 6,
+    padding: 16, alignItems: "center", gap: 8,
+  },
+  bigCode: { color: T.bone, fontSize: 32, letterSpacing: 5, textShadowColor: T.cyan, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 14 },
+  codeMeaning: { color: T.yellow, fontSize: 12, letterSpacing: 1.5 },
+  howTo: { color: T.dim, fontSize: 10, lineHeight: 16, textAlign: "center", maxWidth: 360 },
+});
+
+// ── Codex face styles (separate to keep main StyleSheet clean) ──────────────
+
+const cx = StyleSheet.create({
+  face: { padding: 14, alignItems: "center", gap: 6, width: "100%" },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 7, flexWrap: "wrap", justifyContent: "center" },
+  chip: {
+    color: T.cyan, borderWidth: 1, borderColor: T.cyan, borderRadius: 999,
+    minWidth: 22, textAlign: "center", fontSize: 9, paddingHorizontal: 5, paddingVertical: 2,
+  },
+  name: { color: T.bone, fontSize: 14, fontWeight: "600" },
+  arcana: { color: T.dim, fontSize: 8, letterSpacing: 2 },
+  metaRow: { flexDirection: "row", gap: 5 },
+  metaIcon: { padding: 3, borderWidth: 1, borderRadius: 3 },
+  metaSuit: { borderColor: T.line },
+  metaElem: { borderColor: T.line },
+  metaCourt: { borderColor: T.line },
+  bothMeanings: { gap: 5, width: "100%" },
+  meaningUp: { color: T.dim, fontSize: 11, lineHeight: 17 },
+  meaningDn: { color: T.dim, fontSize: 11, lineHeight: 17 },
+  labelUp: { color: T.cyan, fontWeight: "600" },
+  labelDn: { color: T.red, fontWeight: "600" },
+  bigrune: { color: T.yellow, fontSize: 44 },
+  meaning: { color: T.dim, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  mkRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  mkTxt: { color: T.cyan, fontSize: 10, letterSpacing: 0.5 },
 });

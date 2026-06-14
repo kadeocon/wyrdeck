@@ -5,6 +5,7 @@
   "dependencies": {
     "expo": "^54.0.35",
     "expo-crypto": "~15.0.9",
+    "expo-haptics": "^56.0.3",
     "expo-status-bar": "~3.0.9",
     "lucide-react-native": "^1.18.0",
     "react": "19.1.0",

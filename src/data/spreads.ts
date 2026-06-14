@@ -26,6 +26,7 @@ export interface Operation {
 
 export const OPS: Operation[] = [
   { id: "div", label: "Divination", open: true },
+  { id: "codex", label: "Codex", open: true },
   { id: "ench", label: "Enchantment", phase: "Phase 1–3", tools: ["Sigil Creator + Log", "Wards & Manifestation", "Charge / Launch Ritual", "SigilChant Audio", "Theban Encoder"] },
   { id: "evo", label: "Evocation", phase: "Phase 3", tools: ["Spirit Board (Autouija)", "EVP / Noise Listener", "Servitor Builder", "Entity Grimoire"] },
   { id: "inv", label: "Invocation", phase: "Phase 2", tools: ["AI Familiar (local LLM)", "Elemental Correspondences"] },
